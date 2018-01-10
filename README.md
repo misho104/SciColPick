@@ -1,10 +1,9 @@
 SciColPick
 ==========
 
-A color-palette generator for scientific plots:
- - friendly to monochrome printers,
- - friendly to color vision deficiency, and
- - "nice" on color screens.
+A (**alpha version**) color-palette generator for scientific plots.
+The colors are friendly to monochrome printers (and thus to color vision deficiency).
+
 
 ### Set up
 
@@ -42,7 +41,7 @@ $ pip uninstall SciColPick
 
 
 ```sh
-SciColPick 4
+SciColPick 4   # and exit with CTRL+D (or CTRL+C)
 ```
 
 #### Author
