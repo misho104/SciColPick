@@ -1,10 +1,7 @@
-from colormath.color_objects import HSLColor, sRGBColor, LabColor, CMYKColor
-import colormath.color_conversions as color_conversions
-import colormath.color_diff as color_diff
-import random
-import itertools
-from scicolpick.Color import Color
-
+import itertools, functools
+from scicolpick.Color import Color, ColorRangeError
+import numpy as np
+from scipy.optimize import minimize
 
 class ColorPalette(object):
     '''
@@ -25,6 +22,7 @@ class ColorPalette(object):
         self._colors = [Color(0, 0, 0) for i in range(n)]
         self._black = Color(0, 0, 0)
         self._white = Color(100, 0, 0)
+        self._vector = None
 
     def colors(self):
         return [self._black] + self._colors + [self._white]
@@ -71,11 +69,42 @@ class ColorPalette(object):
             if done:
                 return self
 
-    def colorize(self):
-        [c.colorize() for c in self._colors]
+    def colorize(self, grays=None, vector=None):
+        if grays is None:
+            grays = [None for c in self._colors]
+
+        if vector is None:
+            [c.colorize(grays[i]) for i, c in enumerate(self._colors)]
+            self._vector = np.array(functools.reduce(lambda s, e: s + list(e), [c.vector for c in self._colors], []))
+        else:
+            v = vector.reshape(self.n, 2)
+            [c.colorize(grays[i], tuple(v[i])) for i, c in enumerate(self._colors)]
         return self
 
     def calc_min_distance(self):
         combinations = itertools.combinations(range(self.n + 2), 2)
         distances = [self.color(i).diff(self.color(j)) for i, j in combinations]
         return min(distances)
+
+    def maximize(self):
+        # Gray level is gradually modified due to numerical precision. so memorize the first gray level.
+        grays = [c.l() for c in self._colors]
+        self.temp = (self._vector, 0)
+        def f(x):
+            try:
+                self.colorize(grays, x)
+            except ColorRangeError:
+                return 99999
+            d = (-1) * self.calc_min_distance()
+            if d < self.temp[1]:
+                self.temp = (x, d)
+            return d
+
+        if self._vector is None:
+            self.colorize(grays)
+
+        minimize(f, self._vector, method='nelder-mead',
+                    options={'disp': True, 'maxiter': 1000, 'maxfev': 1000})
+        self.colorize(grays, self.temp[0])
+        self.temp = None
+        return self

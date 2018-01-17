@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import click
+import copy
 from scicolpick.ColorPalette import ColorPalette
 
 __version__ = '0.0.1'
@@ -15,16 +16,18 @@ def scicolpick_main(**args):
     i = 0
     while True:
         i = i + 1
+        d = 0
         palette = ColorPalette(args['size'])
-        palette.initialize_with_equalized_gray().colorize()
-        distance = palette.calc_min_distance()
-        if distance > best[0]:
-            print(distance)
-            best = (distance, palette)
-            history.append(best)
-            if len(history) > 10:
-                history.pop(0)
-            test(history, 'result.png', 'result.txt')
+        while d < 25:
+            palette.initialize_with_equalized_gray().colorize()
+            d = palette.calc_min_distance()
+        history.append((d, palette))
+        p = copy.deepcopy(palette)
+        d = p.maximize().calc_min_distance()
+        history.append((d, p))
+        test(history, 'result.png', 'result.txt')
+        if i == 12:
+            exit(0)
 
 
 import matplotlib.pyplot as pyplot

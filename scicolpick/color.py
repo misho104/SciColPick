@@ -3,6 +3,8 @@ import colormath.color_conversions as color_conversions
 import colormath.color_diff as color_diff
 import random
 
+class ColorRangeError(ValueError):
+    pass
 
 class Color(object):
     '''
@@ -11,6 +13,7 @@ class Color(object):
     '''
     def __init__(self, *args, **kwargs):
         self.c = LabColor(*args, **kwargs)
+        self.vector = None
 
     def l(self):
         return self.c.lab_l
@@ -51,7 +54,7 @@ class Color(object):
         return c * 12.92 if c < 0.0031308 else 1.055 * (c**(1 / 2.4)) - 0.055
 
     @classmethod
-    def random_with_fixed_gray(cls, gray):
+    def random_color_vector(cls, gray):
         '''
         Generate three random number x, y, z in [0,1) that satisfies
             (x, y, z) . rgb_to_gray_weight = gray
@@ -64,17 +67,13 @@ class Color(object):
             Z = (0, 0, 1/0.0722).
         '''
         if gray < 0:
-            return [0, 0, 0]
-        elif gray < cls.rgb_to_gray_weight[2]:  # the minimal value, 0.0722
+            return (0, 0)
+        elif gray < cls.rgb_to_gray_weight[2] or gray > 1 - cls.rgb_to_gray_weight[2]:  # the minimal value, 0.0722
             while True:
                 r1 = random.random()
                 r2 = random.random()
                 if r1 + r2 < 1:
-                    return [r1 * gray / cls.rgb_to_gray_weight[0],
-                            r2 * gray / cls.rgb_to_gray_weight[1],
-                            (1-r1-r2) * gray / cls.rgb_to_gray_weight[2]]
-        elif gray > 1 - cls.rgb_to_gray_weight[2]:
-            return [1 - v for v in cls.random_with_fixed_gray(1-gray)]
+                    return (r1, r2)
         else:
             y_min = max(0., (gray - 1 + cls.rgb_to_gray_weight[1]) / cls.rgb_to_gray_weight[1])
             y_max = min(1., gray / cls.rgb_to_gray_weight[1])
@@ -83,19 +82,43 @@ class Color(object):
                 y = random.uniform(y_min, y_max)
                 x = (gray - y * cls.rgb_to_gray_weight[1] - z * cls.rgb_to_gray_weight[2]) / cls.rgb_to_gray_weight[0]
                 if not (x < 0 or x > 1):
-                    return [x, y, z]
+                    return (y, z)
 
-    def colorize(self, gray_l=None):
+    @classmethod
+    def vector_to_linear_color(cls, gray, vector):
+        (r1, r2) = vector
+        if gray < 0:
+            return [0, 0, 0]
+        elif gray < cls.rgb_to_gray_weight[2]:  # the minimal value, 0.0722
+            if r1 < 0 or r2 < 0 or 1 - r1 - r2 < 0:
+                raise ColorRangeError
+            return [r1 * gray / cls.rgb_to_gray_weight[0],
+                    r2 * gray / cls.rgb_to_gray_weight[1],
+                    (1 - r1 - r2) * gray / cls.rgb_to_gray_weight[2]]
+        elif gray > 1 - cls.rgb_to_gray_weight[2]:
+            return [1 - c for c in cls.vector_to_linear_color(1-gray, (r1, r2))]
+        else:
+            # Note that the vector is not validated.
+            y_min = max(0., (gray - 1 + cls.rgb_to_gray_weight[1]) / cls.rgb_to_gray_weight[1])
+            y_max = min(1., gray / cls.rgb_to_gray_weight[1])
+            x = (gray - r1 * cls.rgb_to_gray_weight[1] - r2 * cls.rgb_to_gray_weight[2]) / cls.rgb_to_gray_weight[0]
+            if x < 0 or x > 1 or r1 < y_min or r1 > y_max or r2 < 0 or r2 > 1:
+                raise ColorRangeError
+            return [x, r1, r2]
+
+    def colorize(self, gray=None, vector=None):
         '''
         :param gray_l: the value of lab_l when converted to gray
         '''
         # first convert the gray level to sRGB value
-        if gray_l is None:
-            gray_l = self.l()
-        gray_srgb = color_conversions.convert_color(LabColor(gray_l, 0, 0), sRGBColor).rgb_r
+        if gray is None:
+            gray = self.l()
+        gray_srgb = color_conversions.convert_color(LabColor(gray, 0, 0), sRGBColor).rgb_r
         gray_linear = self.srgb_to_linear(gray_srgb)
-
-        random_linear = self.random_with_fixed_gray(gray_linear)
-        random_rgb = [self.linear_to_srgb(c) for c in random_linear]
-        rgb = sRGBColor(*random_rgb)
+        if vector is None:
+            vector = self.random_color_vector(gray_linear)
+        color_linear = self.vector_to_linear_color(gray_linear, vector)
+        color_rgb = [self.linear_to_srgb(c) for c in color_linear]
+        rgb = sRGBColor(*color_rgb)
         self.c = color_conversions.convert_color(rgb, LabColor)
+        self.vector = vector
